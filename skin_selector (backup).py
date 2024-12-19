@@ -1,4 +1,5 @@
 import os
+import re
 import subprocess
 import sys
 import tkinter as tk
@@ -7,19 +8,20 @@ from tkinter import messagebox
 from PIL import Image, ImageTk  # For image handling
 
 class ThemeSelectorApp:
-    def __init__(self, root, conf_dir="/boot/efi/EFI/Microsoft/Boot/refind.conf"):
+    def __init__(self, root, conf_dir="/boot/efi/EFI/refind/refind.conf"):
+        print('Launching skin selector...')
         # Paths Relative to Project Root
         self.APP_ROOT = os.path.dirname(os.path.abspath(__file__))
-        self.THEMES_DIR = os.path.join(self.APP_ROOT, ".themes")  # Example: /path/to/project/.themes
+        self.ROOT_THEMES_DIR = os.path.join(self.APP_ROOT, ".themes")  # Example: /path/to/project/.themes
         self.SAMPLE_DIR = os.path.join(self.APP_ROOT, "samples")
-        self.DEFAULT_THEME_IMAGE = os.path.join(self.SAMPLE_DIR, "default.png")
+        self.DEFAULT_THEME_IMAGE = os.path.join(self.SAMPLE_DIR, ".error.png")
         self.BG_FOLDER_NAME = "bg"  # The folder containing background images
 
         # the directory of the users refind configuration directory
         self.refind_conf_file = conf_dir
 
         self.root = root
-        self.root.title("Win-integrated Linux (Ubuntu) rEFInd Automatic Skin Loader by GitHub  E.T.A.")
+        self.root.title("Linux rEFInd Automatic Skin Loader by E.T.A. and skin authors")
         self.root.geometry("800x500")
         self.root.minsize(600, 400)
         self.root.resizable(True, True)
@@ -46,11 +48,12 @@ class ThemeSelectorApp:
         self.theme_name = ''
         self.theme_dir = ''
         self.theme_index = 0
+        self.theme_config_file = ''
 
         # attributes for image background (if applicable)
-        self.bg_images = None
         self.bg_name = ''
-        self.bg_dir = ''
+        self.bg_images = None
+        self.bg_dir = None
         self.bg_caption = None
         self.bg_index = 0  # Current background index
 
@@ -102,12 +105,12 @@ class ThemeSelectorApp:
 
         # boolean shorthand
         config_found = os.path.exists(self.refind_conf_file)
-        themes_found = os.path.exists(self.THEMES_DIR)
+        themes_found = os.path.exists(self.ROOT_THEMES_DIR)
 
         if config_found and themes_found:
             return
 
-        if not os.path.exists(self.THEMES_DIR):
+        if not os.path.exists(self.ROOT_THEMES_DIR):
             exit('Unable to locate themes directory!')
 
         # if passed/default refind config is not found, reinstall refind files
@@ -135,36 +138,29 @@ class ThemeSelectorApp:
         with open(self.refind_conf_file, 'r') as file:
             lines = file.readlines()
 
-        print(f'Applying {self.theme_name} theme...')
         themes_query = 'include .themes/'
-        bg_query = 'include background/'
-        new_theme = f"{themes_query}{self.theme_name}/"
+        new_theme = f"{themes_query}{self.theme_name}/theme.conf\n"
 
-        if themes_query in lines[-2]:
-            lines[-2] = new_theme
-        elif themes_query in lines[-1]:
+        if themes_query in lines[-1]:
             lines[-1] = new_theme
         else:
             lines.append(new_theme)
 
-        # if this configuration has a list of backgrounds...
+        # if this skin has multiple backgrounds...
         if self.bg_images:
-            print('Applying background image...')
-            new_bg = f'{bg_query}{self.bg_images[self.bg_index]}'
-            # check the last line for a background parameter instead of unnecessarily looping
-            if bg_query in lines[-1]:
-                # if a bg parameter already exists, replace it
-                lines[-1] = new_bg
-            else:
-                lines.append(new_bg)
-        # else remove the old background selection parameter
-        elif bg_query in lines[-1]:
-            # remove the last line from the file (should be the bg param)
-            lines.pop()
+            with open(self.theme_config_file, 'r') as file:
+                bg_lines = file.readlines()
 
-        # Todo remove this - just a test
-        if bg_query in lines:
-            print("If this image doesn't have backgrounds, something has gone wrong here...")
+            bg_query = f'banner themes/'
+            bg_new = f'{bg_query}{self.theme_name}/{self.BG_FOLDER_NAME}/{self.bg_name}\n'
+
+            # check if query exists in theme.conf
+            for i, line in enumerate(bg_lines):
+                if bg_query in line:
+                    bg_lines[i] = bg_new
+
+                    with open(self.theme_config_file, 'w') as file:
+                        file.writelines(bg_lines)
 
         # write the new data to the config file
         with open(self.refind_conf_file, 'w') as file:
@@ -174,24 +170,24 @@ class ThemeSelectorApp:
 
     def list_themes(self):
         """Fetches the list of themes from the themes directory."""
-        if not os.path.exists(self.THEMES_DIR):
+        if not os.path.exists(self.ROOT_THEMES_DIR):
             print("Themes directory does not exist. Creating...")
-            os.makedirs(self.THEMES_DIR, exist_ok=True)
+            os.makedirs(self.ROOT_THEMES_DIR, exist_ok=True)
 
         # load the path of each theme in the themes directory into a python list for easier reference
         #themes = [d for d in os.listdir(self.ROOT_THEMES_DIR)]
-        themes = os.listdir(self.THEMES_DIR)
+        themes = os.listdir(self.ROOT_THEMES_DIR)
 
         if not themes:
             exit('No themes found in the directory.')
 
-        print(f'List size: {len(themes)}')
+        print(f'Total themes found: {len(themes)}')
         return themes
 
-    def  get_dir_display_image(self):
+    def get_sample_image_dir(self):
         """Returns the path to the theme's image or a fallback."""
         screenshot_path = os.path.join(self.SAMPLE_DIR, f'{self.theme_name}.png')
-        background_path = os.path.join(self.THEMES_DIR, 'background.png')
+        background_path = os.path.join(self.ROOT_THEMES_DIR, 'background.png')
 
         # if the path leads to a folder of images
         if self.bg_images:
@@ -201,20 +197,25 @@ class ThemeSelectorApp:
         elif os.path.exists(background_path):
             return background_path
         else:
-            print(f"No image found for theme: {self.theme_name}, using fallback image.")
+            print(f'No image found for theme "{self.theme_name}", using fallback image instead.\n Path: {self.current_image_dir}')
             return self.DEFAULT_THEME_IMAGE  # Default image fallback
 
     def get_bg_images(self):
-        print(f'Attempting to get background images... self.bg_dir = {self.bg_dir}')
         # if the current theme has multiple backgrounds
         if os.path.isdir(self.bg_dir):
+            print(f'Attempting to load background images...')
             # return a list of strings containing the directory to each background
-            self.bg_images = os.listdir(self.bg_dir)
+            return [f'{self.bg_dir}/{d}' for d in os.listdir(self.bg_dir)]
         else:
-            print('No background images found.')
-            self.bg_refresh_attributes()
+            print('This image has no backgrounds, refreshing old background attributes...')
+            return self.bg_refresh_attributes()
 
-        return self.bg_images
+    def get_bg_name(self):
+        if self.bg_images:
+            match = re.search(r"(.+)/(.+)\.png", self.bg_images[self.bg_index])
+            if match:
+                # returns the text between the '/' and '.png' of the bg_dir
+                return match.group(2)
 
     def show_bg_navigation(self):
         """Show the up/down arrows and caption when backgrounds exist."""
@@ -235,8 +236,9 @@ class ThemeSelectorApp:
 
     def update_bg_caption(self):
         """Update the caption for the current background index."""
-        if hasattr(self, 'bg_caption') and self.bg_images:
-            self.bg_caption.config(text=f'Background {self.bg_index + 1}/{len(self.bg_images)}')
+        pass
+        # if hasattr(self, 'bg_caption') and self.bg_images:
+        #     self.bg_caption.config(text=f"Background {self.bg_index + 1}/{len(self.bg_images)}")
 
     ############ OLD CLASS START #############
 
@@ -257,35 +259,33 @@ class ThemeSelectorApp:
         self.update_image()
 
     def bg_refresh_attributes(self):
-        self.bg_name = ''
         self.bg_dir = ''
         self.bg_index = 0
-        self.bg_caption = None
         self.bg_images = None
 
     def display_theme(self):
-        if not self.themes:
-            messagebox.showerror("Error", "No themes available.")
-            return
-
-        self.bg_refresh_attributes()
-
         # set current theme
         self.theme_name = self.themes[self.theme_index]
-        self.theme_dir = os.path.join(self.THEMES_DIR, self.theme_name)
-        # load background image list
-        self.bg_images = self.get_bg_images()
+        self.theme_dir = os.path.join(self.ROOT_THEMES_DIR, self.theme_name)
+        self.theme_config_file = os.path.join(self.theme_dir, 'theme.conf')
+        print(f'Local config folder located at: {self.theme_config_file}')
 
-        self.current_image_name = self.theme_name.title()
+        self.bg_dir = os.path.join(self.SAMPLE_DIR, self.theme_name)
+        self.bg_images = self.get_bg_images()
+        print(f'BG IMAGES = {self.bg_images}')
+        self.bg_name = self.get_bg_name()
+
+        # Todo simplify
+        self.current_image_name = self.bg_name if self.bg_name else self.theme_name
+        self.current_image_dir = self.get_sample_image_dir()
 
         # Show or hide up/down arrows and caption
-        if self.bg_images and len(self.bg_images) > 1:
+        if self.bg_images:
+            self.current_image_dir = self.bg_images[self.bg_index]
+            self.image_label.config(text=f"{self.bg_index + 1}/{len(self.bg_images)}")
             self.show_bg_navigation()
-            self.current_image_name += f'{self.bg_index + 1}/{len(self.bg_images)}'
-            self.image_label.config(text=f"Background {self.bg_index + 1}/{len(self.bg_images)}")
         else:
             self.hide_bg_navigation()
-            self.current_image_dir = self.get_dir_display_image()
 
         # Update image and write changes to config file
         self.update_image()
@@ -316,7 +316,8 @@ class ThemeSelectorApp:
 
                 self.current_image = ImageTk.PhotoImage(final_image)
                 self.image_label.config(image=self.current_image)
-                self.theme_name_label.config(text=self.current_image_name)
+                self.theme_name_label.config(text=self.current_image_name.title())
+                self.update_bg_caption()
 
             except Exception as e:
                 print(f"Error resizing image: {e}")
@@ -324,28 +325,22 @@ class ThemeSelectorApp:
     def next_theme(self):
         if self.themes:
             self.theme_index = (self.theme_index + 1) % len(self.themes)
-            self.bg_index = 0
             self.display_theme()
 
     def prev_theme(self):
         if self.themes:
             self.theme_index = (self.theme_index - 1) % len(self.themes)
-            self.bg_index = 0
             self.display_theme()
 
     def next_bg(self):
-        print('Attempt to set next background...')
         if self.bg_images:
             self.bg_index = (self.bg_index + 1) % len(self.bg_images)
-            self.display_bg(self.bg_index)
-            self.update_bg_caption()
+            self.display_theme()
 
     def prev_bg(self):
-        print('Attempt to set previous background...')
         if self.bg_images:
             self.bg_index = (self.bg_index - 1) % len(self.bg_images)
-            self.display_bg(self.bg_index)
-            self.update_bg_caption()
+            self.display_theme()
 
     def delete_theme(self):
         if not self.themes:
@@ -355,7 +350,7 @@ class ThemeSelectorApp:
         theme_to_delete = self.themes[self.theme_index]
         confirm = messagebox.askyesno("Delete Theme", f"Are you sure you want to delete the theme '{theme_to_delete}'?")
         if confirm:
-            theme_path = os.path.join(self.THEMES_DIR, theme_to_delete)
+            theme_path = os.path.join(self.ROOT_THEMES_DIR, theme_to_delete)
             try:
                 # Delete the theme folder
                 import shutil
@@ -372,7 +367,7 @@ class ThemeSelectorApp:
                     self.theme_name_label.config(text="")
                     self.image_label.config(image="")
             except Exception as e:
-                messagebox.showerror("Error", f"Failed to delete theme '{theme_to_delete}': {e}")
+                messagebox.showerror("Error", f"Unable to delete theme '{theme_to_delete}': {e}")
 
 if __name__ == "__main__":
     base_gui = tk.Tk()
