@@ -1,0 +1,16 @@
+
+# Ignore all by default
+/*
+!/.git
+!/.gitignore
+!/README.md
+!/screenshot.png
+
+# Only keep customizations
+!/icons
+!/font.png
+!/refind.conf
+!/background.png
+!/selection_big.png
+!/selection_small.png
+
