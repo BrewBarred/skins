@@ -1,5 +1,6 @@
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tkinter as tk
@@ -8,16 +9,16 @@ from tkinter import messagebox
 from PIL import Image, ImageTk  # For image handling
 
 class ThemeSelectorApp:
-    def __init__(self, root, conf_dir="/boot/efi/EFI/refind/refind.conf"):
+    def __init__(self, root, refind_root=None):
         print('Launching skin selector...')
+        self.REFIND_ROOT = refind_root if refind_root else "/boot/efi/EFI/refind"
+        self.REFIND_THEME_ROOT = os.path.join(self.REFIND_ROOT, "theme")
         # Paths Relative to Project Root
         self.APP_ROOT = os.path.dirname(os.path.abspath(__file__))
-        self.THEMES_ROOT = os.path.join(self.APP_ROOT, ".themes")  # Example: /path/to/project/.themes
-        self.SAMPLE_ROOT = os.path.join(self.THEMES_ROOT, "samples")
+        self.APP_THEMES_ROOT = os.path.join(self.APP_ROOT, ".themes")  # Example: /path/to/project/.themes
+        self.SAMPLE_ROOT = os.path.join(self.APP_THEMES_ROOT, "samples")
         self.ERROR_IMAGE = os.path.join(self.SAMPLE_ROOT, ".error.png")
         self.BG_FOLDER_NAME = "bg"  # The folder containing background images
-        # the directory of the users refind configuration directory
-        self.REFIND_CONFIG_FILE = conf_dir
 
         self.root = root
         self.root.title("Linux rEFInd Automatic Skin Loader by E.T.A. and skin authors")
@@ -33,10 +34,6 @@ class ThemeSelectorApp:
         self.root.bind("<Delete>", lambda e: self.delete_theme())
         # Bind resizing events
         self.root.bind("<Configure>", self.on_resize)
-
-        # get necessary permissions and validate necessary directories
-        self.get_permission()
-        self.check_dirs()
 
         # prevent the user from lagging the application by spamming any direction
         self.last_keypress_time = 0  # Track last keypress time
@@ -92,65 +89,62 @@ class ThemeSelectorApp:
             # Todo check if this is needed? Does it close the lowered terminal instance, perhaps?
             sys.exit(0)
 
-    def request_conf_dir(self):
+    def refind_root(self):
+        """
+        Get or set refind root (TODO)
+        :return:
+        """
         # request the refind configuration file directory from the user using an open file dialog
         # Todo add open file dialog - LOL
-        self.REFIND_CONFIG_FILE = self.REFIND_CONFIG_FILE
-        return self.REFIND_CONFIG_FILE
+        return self.REFIND_ROOT
 
     def check_dirs(self):
         # Todo test this by restarting PC and checking app functionality
         """Ensure the themes directory and refind.conf exist."""
 
         # boolean shorthand
-        config_found = os.path.exists(self.REFIND_CONFIG_FILE)
-        themes_found = os.path.exists(self.THEMES_ROOT)
+        conf_found = os.path.exists(self.theme_config_file)
+        themes_found = os.path.exists(self.APP_THEMES_ROOT)
+        print(f'\nConfig: {self.REFIND_ROOT}\nApp themes: {self.APP_THEMES_ROOT}')
 
-        if config_found and themes_found:
+        if conf_found and themes_found:
             return
 
-        if not os.path.exists(self.THEMES_ROOT):
+        print('\nUnable to find launch files... attempting to install...\n')
+
+        if not os.path.exists(self.APP_THEMES_ROOT):
             exit('Unable to locate themes directory!')
 
         # if passed/default refind config is not found, reinstall refind files
-        if not os.path.exists(self.REFIND_CONFIG_FILE):
+        if not os.path.exists(self.REFIND_ROOT):
             subprocess.check_call(['apt', 'install'])
             subprocess.check_call(['refind-install'])
 
         # if refind config files still can't be found after reinstall, ask user for dir
-        if not os.path.exists(self.REFIND_CONFIG_FILE):
-            self.request_conf_dir()
+        if not os.path.exists(self.REFIND_ROOT):
+            self.refind_root()
 
         # Todo instead of crying about this being pointless, consider adding an option to drag config file onto app or
         # add a button to load it manually that disappears on load. A warning label can appear so the user can still
         # browse as per normal but they are aware that nothing is being set because the refind file couldn't be found
 
         # if user provides invalid path to the refind conf, this application cannot apply skins - pointless.
-        if not os.path.exists(self.REFIND_CONFIG_FILE):
+        if not os.path.exists(self.REFIND_ROOT):
             exit('Unable to locate the refind configuration file!')
 
     def update_config(self):
         """Edits the refind.conf to apply the selected theme."""
-        if not os.path.exists(self.REFIND_CONFIG_FILE):
-            print(f"{self.REFIND_CONFIG_FILE} not found. Creating a new one.")
-
-        with open(self.REFIND_CONFIG_FILE, 'r') as file:
-            lines = file.readlines()
-
-        themes_query = 'include '
-        new_theme = f"{themes_query}{self.THEMES_ROOT}/{self.theme_name}/theme.conf\n"
-        print('New theme to include: ' + new_theme)
-
-        if themes_query in lines[-1]:
-            lines[-1] = new_theme
-        else:
-            lines.append(new_theme)
-
-        # write the new data to the config file
-        with open(self.REFIND_CONFIG_FILE, 'w') as file:
-            file.writelines(lines)
-
-
+        # with open(self.REFIND_CONFIG_FILE, 'r') as file:
+        #     lines = file.readlines()
+        #
+        # themes_query = 'include '
+        # new_theme = f"{themes_query}{self.APP_THEMES_ROOT}/{self.theme_name}/theme.conf\n"
+        # print('New theme to include: ' + new_theme)
+        #
+        # if themes_query in lines[-1]:
+        #     lines[-1] = new_theme
+        # else:
+        #     lines.append(new_theme)
 
         # if this skin has multiple backgrounds...
         if self.bg_images:
@@ -172,13 +166,13 @@ class ThemeSelectorApp:
 
     def list_themes(self):
         """Fetches the list of themes from the themes directory."""
-        if not os.path.exists(self.THEMES_ROOT):
+        if not os.path.exists(self.APP_THEMES_ROOT):
             print("Themes directory does not exist. Creating...")
-            os.makedirs(self.THEMES_ROOT, exist_ok=True)
+            os.makedirs(self.APP_THEMES_ROOT, exist_ok=True)
 
         # load the path of each theme in the themes directory into a python list for easier reference
         #themes = [d for d in os.listdir(self.ROOT_THEMES_DIR)]
-        themes = os.listdir(self.THEMES_ROOT)
+        themes = os.listdir(self.APP_THEMES_ROOT)
 
         if not themes:
             exit('No themes found in the directory.')
@@ -189,7 +183,7 @@ class ThemeSelectorApp:
     def get_sample_image_dir(self):
         """Returns the path to the theme's image or a fallback."""
         screenshot_path = os.path.join(self.SAMPLE_ROOT, f'{self.theme_name}.png')
-        background_path = os.path.join(self.THEMES_ROOT, 'background.png')
+        background_path = os.path.join(self.APP_THEMES_ROOT, 'background.png')
 
         # if the path leads to a folder of images
         if self.bg_images:
@@ -268,7 +262,7 @@ class ThemeSelectorApp:
     def display_theme(self):
         # set current theme
         self.theme_name = self.themes[self.theme_index]
-        self.theme_dir = os.path.join(self.THEMES_ROOT, self.theme_name)
+        self.theme_dir = os.path.join(self.APP_THEMES_ROOT, self.theme_name)
         self.theme_config_file = os.path.join(self.theme_dir, 'theme.conf')
         print(f'Local config folder located at: {self.theme_config_file}')
 
@@ -292,6 +286,7 @@ class ThemeSelectorApp:
         # Update image and write changes to config file
         self.update_image()
         self.update_config()
+        self.transfer_theme_files()
 
     def update_image(self):
         if os.path.exists(self.current_image_dir):
@@ -327,6 +322,39 @@ class ThemeSelectorApp:
             except Exception as e:
                 print(f"Error resizing image: {e}")
 
+    def transfer_theme_files(self):
+        """
+        Replaces the contents of the home_folder with the contents of the boot_folder.
+        """
+        refind_root = os.listdir(self.REFIND_THEME_ROOT)
+        print(f'LENGTH BEFORE: {len(refind_root)}')
+        # clear the existing refind theme folder
+        for item in os.listdir(self.REFIND_THEME_ROOT):
+            item_path = os.path.join(self.REFIND_THEME_ROOT, item)
+            try:
+                if os.path.isdir(item_path):
+                    shutil.rmtree(item_path)
+                else:
+                    os.remove(item_path)
+            except Exception as e:
+                print(f"Failed to delete {item_path}: {e}")
+        print(f'LENGTH AFTER: {len(refind_root)}')
+
+        # print('Image dir = ' + self.current_image_dir)
+        # # copy contents from selected theme folder to refind folder
+        # for item in os.listdir(self.current_image_dir):
+        #     src_path = os.path.join(boot_folder, item)
+        #     dest_path = os.path.join(home_folder, item)
+        #     try:
+        #         if os.path.isdir(src_path):
+        #             shutil.copytree(src_path, dest_path)
+        #         else:
+        #             shutil.copy2(src_path, dest_path)
+        #     except Exception as e:
+        #         print(f"Failed to copy {src_path} to {dest_path}: {e}")
+        #
+        # print(f"Contents of '{home_folder}' have been replaced with contents from '{boot_folder}'.")
+
     def next_theme(self):
         if self.themes:
             self.theme_index = (self.theme_index + 1) % len(self.themes)
@@ -355,7 +383,7 @@ class ThemeSelectorApp:
         theme_to_delete = self.themes[self.theme_index]
         confirm = messagebox.askyesno("Delete Theme", f"Are you sure you want to delete the theme '{theme_to_delete}'?")
         if confirm:
-            theme_path = os.path.join(self.THEMES_ROOT, theme_to_delete)
+            theme_path = os.path.join(self.APP_THEMES_ROOT, theme_to_delete)
             try:
                 # Delete the theme folder
                 import shutil
