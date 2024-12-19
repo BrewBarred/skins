@@ -1,4 +1,0 @@
-base color: ecf0f1ff
-second color one: c2c2c2ff
-white: ffffffff
-

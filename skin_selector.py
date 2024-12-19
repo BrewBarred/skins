@@ -152,7 +152,7 @@ class ThemeSelectorApp:
                 bg_lines = file.readlines()
 
             bg_query = f'banner themes/'
-            bg_new = f'{bg_query}{self.theme_name}/{self.BG_FOLDER_NAME}/{self.bg_name}\n'
+            bg_new = f'{bg_query}{self.theme_name}/{self.BG_FOLDER_NAME}/{self.bg_name}.png\n'
 
             # check if query exists in theme.conf
             for i, line in enumerate(bg_lines):
@@ -316,7 +316,10 @@ class ThemeSelectorApp:
 
                 self.current_image = ImageTk.PhotoImage(final_image)
                 self.image_label.config(image=self.current_image)
-                self.theme_name_label.config(text=self.current_image_name.title())
+                label = self.current_image_name.title()
+                if self.bg_images:
+                    label = f'{self.theme_name.title()}: ' + label
+                self.theme_name_label.config(text=label)
                 self.update_bg_caption()
 
             except Exception as e:
